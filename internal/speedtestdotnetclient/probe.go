@@ -2,74 +2,78 @@ package speedtestdotnetclient
 
 import (
 	"context"
-	"fmt"
-	"log"
 
-	"go.jonnrb.io/speedtest/oututil"
 	"go.jonnrb.io/speedtest/speedtestdotnet"
 	"go.jonnrb.io/speedtest/units"
-	"golang.org/x/sync/errgroup"
+
+	"go.framey.io/speedtest/internal/core"
+	"go.framey.io/speedtest/internal/measurementstream"
 )
 
-func download(client *speedtestdotnet.Client, server speedtestdotnet.Server) {
-	ctx, cancel := context.WithTimeout(context.Background(), *dlTime)
+type SpeedtestdotnetEndpointImpl struct{}
+
+func (instance SpeedtestdotnetEndpointImpl) Download(
+	ctx context.Context,
+	measurement *core.SpeedMeasurement,
+	measurementCallback core.MeasurementCallback) (float64, error) {
+
+	var client speedtestdotnet.Client
+
+	initCtx, cancel := context.WithTimeout(context.Background(), measurement.Configuration.ConfigTimeout)
 	defer cancel()
 
-	stream, finalize := proberPrinter(func(s units.BytesPerSecond) string {
-		return formatSpeed("Download speed", s)
-	})
-	speed, err := server.ProbeDownloadSpeed(ctx, client, stream)
+	servers, err := enumerateServers(initCtx, measurement, &client)
 	if err != nil {
-		log.Fatalf("Error probing download speed: %v", err)
-		return
+		return 0, err
 	}
-	finalize(speed)
+
+	targetServer, err := selectServerWithMinLatency(initCtx, measurement, &client, servers)
+	if err != nil {
+		return 0, err
+	}
+
+	stream, finalize := measurementstream.CreateMeasurementStream(measurement.Configuration.MeasurementRatio, measurementCallback)
+	speed, err := targetServer.ProbeDownloadSpeed(ctx, &client, stream)
+	if err != nil {
+		measurement.Logger.Errorf("Download. Error probing download speed: %v", err)
+		return 0, err
+	}
+
+	result := float64(speed) * measurement.Configuration.MeasurementRatio
+
+	finalize(units.BytesPerSecond(result))
+	return result, nil
 }
 
-func upload(client *speedtestdotnet.Client, server speedtestdotnet.Server) {
-	ctx, cancel := context.WithTimeout(context.Background(), *ulTime)
+func (instance SpeedtestdotnetEndpointImpl) Upload(
+	ctx context.Context,
+	measurement *core.SpeedMeasurement,
+	measurementCallback core.MeasurementCallback) (float64, error) {
+
+	var client speedtestdotnet.Client
+
+	initCtx, cancel := context.WithTimeout(context.Background(), measurement.Configuration.ConfigTimeout)
 	defer cancel()
 
-	stream, finalize := proberPrinter(func(s units.BytesPerSecond) string {
-		return formatSpeed("Upload speed", s)
-	})
-	speed, err := server.ProbeUploadSpeed(ctx, client, stream)
+	servers, err := enumerateServers(initCtx, measurement, &client)
 	if err != nil {
-		log.Fatalf("Error probing upload speed: %v", err)
+		return 0, err
 	}
-	finalize(speed)
-}
 
-func proberPrinter(format func(units.BytesPerSecond) string) (
-	stream chan units.BytesPerSecond,
-	finalize func(units.BytesPerSecond),
-) {
-	p := oututil.StartPrinting()
-	p.Println(format(units.BytesPerSecond(0)))
-
-	stream = make(chan units.BytesPerSecond)
-	var g errgroup.Group
-	g.Go(func() error {
-		for speed := range stream {
-			p.Println(format(speed))
-		}
-		return nil
-	})
-
-	finalize = func(s units.BytesPerSecond) {
-		g.Wait()
-		p.Finalize(format(s))
+	targetServer, err := selectServerWithMinLatency(initCtx, measurement, &client, servers)
+	if err != nil {
+		return 0, err
 	}
-	return
-}
 
-func formatSpeed(prefix string, s units.BytesPerSecond) string {
-	var i interface{}
-	// Default return speed is in bytes.
-	if *fmtBytes {
-		i = s
-	} else {
-		i = s.BitsPerSecond()
+	stream, finalize := measurementstream.CreateMeasurementStream(measurement.Configuration.MeasurementRatio, measurementCallback)
+	speed, err := targetServer.ProbeUploadSpeed(ctx, &client, stream)
+	if err != nil {
+		measurement.Logger.Errorf("Upload. Error probing speed: %v", err)
+		return 0, err
 	}
-	return fmt.Sprintf("%s: %v", prefix, i)
+
+	result := float64(speed) * measurement.Configuration.MeasurementRatio
+
+	finalize(units.BytesPerSecond(result))
+	return result, nil
 }

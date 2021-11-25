@@ -1,68 +1,46 @@
-package main
+package speedtest
 
 import (
-	"flag"
-	"fmt"
-	"os"
-	"strings"
-
+	"context"
+	"github.com/Masterminds/log-go/impl/logrus"
+	"go.framey.io/speedtest/internal/core"
 	"go.framey.io/speedtest/internal/fastdotcomclient"
 	"go.framey.io/speedtest/internal/speedtestdotnetclient"
+	"go.framey.io/speedtest/internal/types"
+	"time"
 )
 
-type subcmd struct {
-	mainFunc func(args []string)
-	aliases  []string
-}
+func NewMeasurement(endpointType types.SpeedMeasurementEndpointType, cfg *types.Configuration) core.SpeedMeasurement {
+	endpoints := make([]interface{}, 2)
+	endpoints[types.FastdotcomEndpoint] = fastdotcomclient.FastdotcomEndpointImpl{}
+	endpoints[types.SpeedtestdotnetEndpoint] = speedtestdotnetclient.SpeedtestdotnetEndpointImpl{}
 
-var subcmds = []subcmd{
-	subcmd{
-		mainFunc: speedtestdotnetclient.Main,
-		aliases:  []string{"st", "speedtest.net"},
-	},
-	subcmd{
-		mainFunc: fastdotcomclient.Main,
-		aliases:  []string{"f", "fast.com"},
-	},
-}
-
-func main() {
-	fastdotcomclient.Main(flag.Args())
-	/*
-		flag.Usage = usage
-		flag.Parse()
-
-		s := getSubcmd()
-		if s == nil {
-			flag.Usage()
-			os.Exit(2)
-		}
-		s.mainFunc(flag.Args())
-	*/
-}
-
-func getSubcmd() *subcmd {
-	args := flag.Args()
-	if len(args) < 1 {
-		return nil
+	return core.SpeedMeasurement{
+		Logger:        logrus.NewStandard(),
+		EndpointType:  endpointType,
+		Endpoint:      endpoints[endpointType].(core.SpeedTestInterface),
+		Configuration: cfg,
 	}
-	for _, s := range subcmds {
-		for _, a := range s.aliases {
-			if a == args[0] {
-				return &s
-			}
-		}
-	}
-	return nil
 }
 
-func usage() {
-	fmt.Fprintf(flag.CommandLine.Output(), "USAGE\n")
-	for _, s := range subcmds {
-		fmt.Fprintf(
-			flag.CommandLine.Output(),
-			"  %s %s [OPTIONS]\n",
-			os.Args[0], strings.Join(s.aliases, "|"))
-	}
-	flag.PrintDefaults()
+func Upload(measurement *core.SpeedMeasurement) (float64, error) {
+	totalTimeout := time.Duration(measurement.Configuration.ConfigTimeout + measurement.Configuration.DownloadTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), totalTimeout)
+	defer cancel()
+
+	speed, err := measurement.Endpoint.Upload(ctx, measurement, func(s float64) string {
+		return ""
+	})
+	return speed, err
+}
+
+func Download(measurement *core.SpeedMeasurement) (float64, error) {
+	totalTimeout := time.Duration(measurement.Configuration.ConfigTimeout + measurement.Configuration.DownloadTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), totalTimeout)
+	defer cancel()
+
+	speed, err := measurement.Endpoint.Download(ctx, measurement, func(s float64) string {
+		return ""
+	})
+	return speed, err
 }

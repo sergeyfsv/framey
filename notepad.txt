@@ -1,1 +1,0 @@
-go get -u go.johnrb/jonnrb/speedtest
