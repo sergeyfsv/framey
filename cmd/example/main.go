@@ -14,16 +14,16 @@ func main() {
 	measurement := NewMeasurement(types.SpeedtestdotnetEndpoint, &measurementConfiguration)
 
 	speed, err := Upload(&measurement)
+	if err != nil {
+		log.Fatalf("(%v) Upload speed measurement error. %v\n", measurement, err)
+		return
+	}
 	log.Printf("Upload speed for %v: %v\n", measurement, speed)
 
-	if err != nil {
-		return
-	}
-
 	speed, err = Download(&measurement)
-	log.Printf("Download speed for %v: %v\n", measurement, speed)
-
 	if err != nil {
+		log.Fatalf("(%v) Download speed measurement error. %v\n", measurement, err)
 		return
 	}
+	log.Printf("(%v) Download speed: %v\n", measurement, speed)
 }

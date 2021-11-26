@@ -13,7 +13,5 @@ install:  ## fetch and install all required deps
 test:
 	go test -v ./... -short
 
-
-# Generate test coverage
-test-cover:
+test-coverage:
 	go test -v -coverprofile cover.out .

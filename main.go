@@ -24,7 +24,7 @@ func NewMeasurement(endpointType types.SpeedMeasurementEndpointType, cfg *types.
 }
 
 func Upload(measurement *core.SpeedMeasurement) (float64, error) {
-	totalTimeout := time.Duration(measurement.Configuration.ConfigTimeout + measurement.Configuration.DownloadTimeout)
+	totalTimeout := time.Duration(measurement.Configuration.ConfigTimeout + measurement.Configuration.UploadTimeout)
 	ctx, cancel := context.WithTimeout(context.Background(), totalTimeout)
 	defer cancel()
 
